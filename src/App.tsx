@@ -25,6 +25,8 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/documents" element={<DocumentsPage />} />
+          <Route path="/create-new" element={<CreateDocumentPage />} />
           <Route path="/projects" element={<Projects />} />
           <Route path="/projects/:projectId" element={<ProjectWorkspace />} />
           <Route path="/projects/:projectId/docs/:docId" element={<ProjectWorkspace />} />
@@ -32,6 +34,7 @@ const App = () => (
           <Route path="/activity" element={<ActivityPage />} />
           <Route path="/templates" element={<TemplatesPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="*" element={<NotFound />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
