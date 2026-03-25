@@ -8,7 +8,6 @@ const navItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Documents", url: "/documents", icon: FolderOpen },
   { title: "Create New", url: "/create-new", icon: FilePlus },
-  { title: "Search", url: "/search", icon: Search },
   { title: "Activity", url: "/activity", icon: Activity },
   { title: "Templates", url: "/templates", icon: FileText },
   { title: "Settings", url: "/settings", icon: Settings },
