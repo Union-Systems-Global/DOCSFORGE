@@ -6,6 +6,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Dashboard from "./pages/Dashboard";
 import Projects from "./pages/Projects";
 import ProjectWorkspace from "./pages/ProjectWorkspace";
+import DocumentsPage from "./pages/DocumentsPage";
+import CreateDocumentPage from "./pages/CreateDocumentPage";
 import SearchPage from "./pages/SearchPage";
 import ActivityPage from "./pages/ActivityPage";
 import TemplatesPage from "./pages/TemplatesPage";
@@ -22,6 +24,8 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/documents" element={<DocumentsPage />} />
+          <Route path="/create-new" element={<CreateDocumentPage />} />
           <Route path="/projects" element={<Projects />} />
           <Route path="/projects/:projectId" element={<ProjectWorkspace />} />
           <Route path="/projects/:projectId/docs/:docId" element={<ProjectWorkspace />} />
@@ -29,6 +33,7 @@ const App = () => (
           <Route path="/activity" element={<ActivityPage />} />
           <Route path="/templates" element={<TemplatesPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="*" element={<NotFound />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
