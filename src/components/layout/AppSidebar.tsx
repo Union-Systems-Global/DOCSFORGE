@@ -1,4 +1,4 @@
-import { LayoutDashboard, FolderOpen, Search, Activity, Settings, FileText, ChevronLeft, FilePlus } from "lucide-react";
+import { LayoutDashboard, FolderOpen, Activity, Settings, FileText, ChevronLeft, FilePlus } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -8,7 +8,6 @@ const navItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Documents", url: "/documents", icon: FolderOpen },
   { title: "Create New", url: "/create-new", icon: FilePlus },
-  { title: "Search", url: "/search", icon: Search },
   { title: "Activity", url: "/activity", icon: Activity },
   { title: "Templates", url: "/templates", icon: FileText },
   { title: "Settings", url: "/settings", icon: Settings },
