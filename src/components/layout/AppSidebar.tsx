@@ -1,4 +1,4 @@
-import { LayoutDashboard, FolderOpen, Search, Activity, Settings, FileText, ChevronLeft } from "lucide-react";
+import { LayoutDashboard, FolderOpen, Search, Activity, Settings, FileText, ChevronLeft, FilePlus } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
