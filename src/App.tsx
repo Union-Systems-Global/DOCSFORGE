@@ -6,10 +6,13 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Dashboard from "./pages/Dashboard";
 import Projects from "./pages/Projects";
 import ProjectWorkspace from "./pages/ProjectWorkspace";
+import DocumentsPage from "./pages/DocumentsPage";
+import CreateDocumentPage from "./pages/CreateDocumentPage";
 import SearchPage from "./pages/SearchPage";
 import ActivityPage from "./pages/ActivityPage";
 import TemplatesPage from "./pages/TemplatesPage";
 import SettingsPage from "./pages/SettingsPage";
+import NotFound from "./pages/NotFound";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
