@@ -6,7 +6,8 @@ import { useState } from "react";
 
 const navItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
-  { title: "Projects", url: "/projects", icon: FolderOpen },
+  { title: "Documents", url: "/documents", icon: FolderOpen },
+  { title: "Create New", url: "/create-new", icon: FilePlus },
   { title: "Search", url: "/search", icon: Search },
   { title: "Activity", url: "/activity", icon: Activity },
   { title: "Templates", url: "/templates", icon: FileText },
