@@ -1,6 +1,6 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useDocumentStore, DocumentNode } from "@/stores/documentStore";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { ChevronRight, FileText, Plus, FolderOpen } from "lucide-react";
@@ -54,9 +54,12 @@ function TreeItem({
 
 export default function DocumentsPage() {
   const navigate = useNavigate();
-  const tree = useDocumentStore((s) => s.getDocumentTree());
+  const documents = useDocumentStore((s) => s.documents);
+  const getDocumentTree = useDocumentStore((s) => s.getDocumentTree);
   const getDocument = useDocumentStore((s) => s.getDocument);
   const [activeId, setActiveId] = useState("");
+
+  const tree = useMemo(() => getDocumentTree(), [documents, getDocumentTree]);
 
   useEffect(() => {
     if (!activeId && tree.length > 0) {
