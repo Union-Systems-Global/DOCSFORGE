@@ -8,7 +8,6 @@ import Projects from "./pages/Projects";
 import ProjectWorkspace from "./pages/ProjectWorkspace";
 import DocumentsPage from "./pages/DocumentsPage";
 import CreateDocumentPage from "./pages/CreateDocumentPage";
-import SearchPage from "./pages/SearchPage";
 import ActivityPage from "./pages/ActivityPage";
 import TemplatesPage from "./pages/TemplatesPage";
 import SettingsPage from "./pages/SettingsPage";
