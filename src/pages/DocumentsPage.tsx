@@ -54,9 +54,12 @@ function TreeItem({
 
 export default function DocumentsPage() {
   const navigate = useNavigate();
-  const tree = useDocumentStore((s) => s.getDocumentTree());
+  const documents = useDocumentStore((s) => s.documents);
+  const getDocumentTree = useDocumentStore((s) => s.getDocumentTree);
   const getDocument = useDocumentStore((s) => s.getDocument);
   const [activeId, setActiveId] = useState("");
+
+  const tree = useMemo(() => getDocumentTree(), [documents, getDocumentTree]);
 
   useEffect(() => {
     if (!activeId && tree.length > 0) {
