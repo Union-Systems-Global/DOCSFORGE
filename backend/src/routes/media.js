@@ -6,6 +6,7 @@ const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const pdf = require('pdf-parse');
 const mammoth = require('mammoth');
+const db = require('../db');
 
 // Configure multer storage
 const storage = multer.diskStorage({
@@ -28,7 +29,7 @@ const upload = multer({
 });
 
 // Generic file upload (Images / Videos)
-router.post('/upload', upload.single('file'), (req, res) => {
+router.post('/upload', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
@@ -36,6 +37,18 @@ router.post('/upload', upload.single('file'), (req, res) => {
 
     const serverIP = process.env.SERVER_IP || 'localhost';
     const fileUrl = `http://${serverIP}:5000/uploads/${req.file.filename}`;
+    
+    // Save to Database
+    try {
+      await db.query(
+        'INSERT INTO media (filename, url, mimetype, size) VALUES ($1, $2, $3, $4)',
+        [req.file.filename, fileUrl, req.file.mimetype, req.file.size]
+      );
+    } catch (dbErr) {
+      console.error('Failed to save media metadata to DB:', dbErr.message);
+      // We don't fail the upload if the DB insert fails, but it will be logged.
+    }
+
     res.json({ 
       url: fileUrl,
       filename: req.file.filename,

@@ -4,14 +4,17 @@ const db = require('../db');
 
 router.get('/', async (req, res) => {
   try {
-    const { bankId } = req.query;
-    let query = 'SELECT * FROM documents';
+    const { bankId, admin } = req.query;
+    let query = 'SELECT id, "bankId", title, subtitle, "activityCode", "parentId", author, "isVersion", "versionLabel", position, visibility, "assignedBanks", "isPublished", "createdAt", "updatedAt" FROM documents';
     const params = [];
 
     if (bankId) {
-      // PostgreSQL string splitting instead of MySQL FIND_IN_SET
+      // Client Portal View: Filter by bank and force isPublished = true
       query += ` WHERE (visibility = 'all' OR "bankId" = ? OR (? = ANY(string_to_array(COALESCE("assignedBanks", ''), ',')))) AND "isPublished" = true`;
       params.push(bankId, bankId);
+    } else if (admin !== 'true') {
+      // Default / Public View (if not admin): Only show published
+      query += ' WHERE "isPublished" = true';
     }
 
     query += ' ORDER BY position ASC, "createdAt" DESC';
@@ -24,12 +27,62 @@ router.get('/', async (req, res) => {
   }
 });
 
+router.get('/resolve-activity/:code', async (req, res) => {
+  try {
+    const { code } = req.params;
+    const { bankId } = req.query;
+
+    // 1. Search for main activityCode
+    let queryMain = 'SELECT id, "bankId", title, "activityCode" FROM documents WHERE LOWER("activityCode") = LOWER(?)';
+    let paramsMain = [code];
+    if (bankId) {
+      queryMain += ' AND (visibility = \'all\' OR "bankId" = ? OR ? = ANY(string_to_array(COALESCE("assignedBanks", \'\'), \',\')))';
+      paramsMain.push(bankId, bankId);
+    }
+    const [mainMatch] = await db.query(queryMain, paramsMain);
+    if (mainMatch && mainMatch[0]) {
+      return res.json({ docId: mainMatch[0].id, type: 'main' });
+    }
+
+    // 2. Search for sub-activity code in content
+    let querySub = 'SELECT id, "bankId", title, "activityCode" FROM documents WHERE content ILIKE ?';
+    let paramsSub = [`%(${code})%`];
+    if (bankId) {
+      querySub += ' AND (visibility = \'all\' OR "bankId" = ? OR ? = ANY(string_to_array(COALESCE("assignedBanks", \'\'), \',\')))';
+      paramsSub.push(bankId, bankId);
+    }
+    const [subMatch] = await db.query(querySub, paramsSub);
+    if (subMatch && subMatch[0]) {
+      return res.json({ docId: subMatch[0].id, type: 'sub' });
+    }
+
+    res.status(404).json({ error: 'Activity code not found' });
+  } catch (error) {
+    console.error('Resolve activity code error:', error);
+    res.status(500).json({ error: 'Failed to resolve activity code' });
+  }
+});
+
+router.get('/:id', async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT * FROM documents WHERE id = ?', [req.params.id]);
+    if (rows && rows[0]) {
+      res.json(rows[0]);
+    } else {
+      res.status(404).json({ error: 'Document not found' });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
 router.post('/', async (req, res) => {
   try {
-    const { id, bankId, title, subtitle, formCode, parentId, content, author, isVersion, position, visibility, assignedBanks, isPublished } = req.body;
+    const { id, bankId, title, subtitle, activityCode, parentId, content, author, isVersion, versionLabel, position, visibility, assignedBanks, isPublished } = req.body;
     await db.query(
-      `INSERT INTO documents (id, "bankId", title, subtitle, "formCode", "parentId", content, author, "isVersion", position, visibility, "assignedBanks", "isPublished") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, bankId, title, subtitle || '', formCode || null, parentId || null, content, author || 'System', isVersion ? true : false, position || 1, visibility || 'specific', assignedBanks || null, isPublished ? true : false]
+      `INSERT INTO documents (id, "bankId", title, subtitle, "activityCode", "parentId", content, author, "isVersion", "versionLabel", position, visibility, "assignedBanks", "isPublished") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, bankId, title, subtitle || '', activityCode || null, parentId || null, content, author || 'System', isVersion ? true : false, versionLabel || null, position || 1, visibility || 'specific', assignedBanks || null, isPublished ? true : false]
     );
 
     // Activity Logging
@@ -42,16 +95,17 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, subtitle, content, bankId, formCode, position, parentId, visibility, assignedBanks, isPublished } = req.body;
+    const { title, subtitle, content, bankId, activityCode, position, parentId, visibility, assignedBanks, isPublished, versionLabel } = req.body;
     let updates = []; let params = [];
 
     if (title !== undefined) { updates.push('title = ?'); params.push(title); }
     if (subtitle !== undefined) { updates.push('subtitle = ?'); params.push(subtitle); }
     if (content !== undefined) { updates.push('content = ?'); params.push(content); }
     if (bankId !== undefined) { updates.push('"bankId" = ?'); params.push(bankId); }
-    if (formCode !== undefined) { updates.push('"formCode" = ?'); params.push(formCode); }
+    if (activityCode !== undefined) { updates.push('"activityCode" = ?'); params.push(activityCode); }
     if (position !== undefined) { updates.push('position = ?'); params.push(position); }
     if (parentId !== undefined) { updates.push('"parentId" = ?'); params.push(parentId === null ? null : parentId); }
+    if (versionLabel !== undefined) { updates.push('"versionLabel" = ?'); params.push(versionLabel === null ? null : versionLabel); }
     if (visibility !== undefined) { updates.push('visibility = ?'); params.push(visibility); }
     if (assignedBanks !== undefined) { updates.push('"assignedBanks" = ?'); params.push(assignedBanks); }
     if (isPublished !== undefined) { updates.push('"isPublished" = ?'); params.push(isPublished ? true : false); }

@@ -18,7 +18,7 @@ export default function Dashboard() {
   useEffect(() => {
     fetchActivities();
     fetchStats();
-    fetchDocuments();
+    fetchDocuments(undefined, true);
     fetchPortals();
   }, [fetchActivities, fetchStats, fetchDocuments, fetchPortals]);
 

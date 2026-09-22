@@ -14,6 +14,7 @@ export interface PortalUser {
 
 interface PortalStore {
   portals: PortalUser[];
+  isLoading: boolean;
   fetchPortals: () => Promise<void>;
   addPortal: (name: string, type: PortalType, bankCode?: string, logoUrl?: string) => Promise<PortalUser>;
   updatePortal: (id: string, updates: Partial<Omit<PortalUser, 'id' | 'type'>>) => Promise<void>;
@@ -24,13 +25,18 @@ interface PortalStore {
 
 export const usePortalStore = create<PortalStore>((set, get) => ({
   portals: [],
+  isLoading: false,
 
   fetchPortals: async () => {
+    if (get().portals.length > 0) return;
+    set({ isLoading: true });
     try {
       const data = await api.get('/portals');
       set({ portals: data });
     } catch (e) {
       console.error(e);
+    } finally {
+      set({ isLoading: false });
     }
   },
 

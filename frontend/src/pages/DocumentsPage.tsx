@@ -3,7 +3,7 @@ import { useDocumentStore, DocumentNode, SavedDocument } from "@/stores/document
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { ChevronRight, FileText, Plus, FolderOpen, Folder, History, Pencil, Trash2, Clock, Building2, ChevronDown, Eye, EyeOff, CheckCircle2, AlertCircle, Settings2, X, Globe, Users, Check } from "lucide-react";
+import { ChevronRight, FileText, Plus, FolderOpen, Folder, History, Pencil, Trash2, Clock, Building2, ChevronDown, Eye, EyeOff, CheckCircle2, AlertCircle, Settings2, X, Globe, Users, Check, Link2 } from "lucide-react";
 import { usePortalStore } from "@/stores/portalStore";
 import {
   Select,
@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { SidebarSkeleton, ContentSkeleton, ElegantLoader } from "@/components/SkeletonLoaders";
 
 function CategoryHubView({ 
   category, 
@@ -142,7 +143,7 @@ function CategoryHubView({
                    
                    <h3 className="font-bold text-lg text-foreground tracking-tight group-hover:text-primary transition-colors line-clamp-1">{child.title}</h3>
                    <p className="text-sm text-muted-foreground mt-2 line-clamp-2 leading-relaxed flex-1">
-                     {child.subtitle || child.content.replace(/<[^>]*>?/gm, '').substring(0, 90) + '...'}
+                     {child.subtitle || (child.content ? child.content.replace(/<[^>]*>?/gm, '').substring(0, 90) + '...' : '')}
                    </p>
                    
                     <div className="mt-6 pt-4 border-t border-border/40 flex items-center justify-between">
@@ -162,9 +163,9 @@ function CategoryHubView({
                            </div>
                          )}
                        </div>
-                       {child.formCode && (
+                       {child.activityCode && (
                           <div className="text-[10px] font-black text-primary/60 uppercase tracking-tighter bg-primary/5 px-2 py-0.5 rounded border border-primary/10">
-                            {child.formCode}
+                            {child.activityCode}
                           </div>
                         )}
                     </div>
@@ -326,6 +327,7 @@ function TreeItem({
 export default function DocumentsPage() {
   const navigate = useNavigate();
   const documents = useDocumentStore((s) => s.documents);
+  const isLoading = useDocumentStore((s) => s.isLoading);
   const getDocumentTree = useDocumentStore((s) => s.getDocumentTree);
   const getDocument = useDocumentStore((s) => s.getDocument);
   const renameDocument = useDocumentStore((s) => s.renameDocument);
@@ -333,9 +335,40 @@ export default function DocumentsPage() {
   const publishDocument = useDocumentStore((s) => s.publishDocument);
   const updateDocument = useDocumentStore((s) => s.updateDocument);
   const [activeId, setActiveId] = useState("");
+  const [isContentLoading, setIsContentLoading] = useState(false);
+
+  useEffect(() => {
+    if (activeId) {
+      const doc = getDocument(activeId);
+      if (doc && doc.content === undefined) {
+        setIsContentLoading(true);
+        useDocumentStore.getState().fetchDocumentContent(activeId)
+          .finally(() => setIsContentLoading(false));
+      }
+    }
+  }, [activeId, getDocument]);
   const { getBanks, portals } = usePortalStore();
   const banks = getBanks();
   const allPortals = portals;
+
+  // Copy the shareable activity-code URL for the active document
+  const copyDocLink = (doc: SavedDocument) => {
+    const portal = portals.find(p => p.id === doc.bankId || doc.assignedBanks?.split(',').includes(p.id));
+    if (!portal) {
+      toast.error("No portal found for this document.");
+      return;
+    }
+    const base = `${window.location.origin}/portal/${portal.id}/docs`;
+    const query = doc.activityCode
+      ? encodeURIComponent(doc.activityCode)
+      : `docId=${doc.id}`;
+    const url = `${base}?${query}`;
+    navigator.clipboard.writeText(url).then(() => {
+      toast.success("Link copied!", { description: url });
+    }).catch(() => {
+      toast.error("Could not copy — here is the link:", { description: url });
+    });
+  };
   const [activeBankId, setActiveBankId] = useState<string>("all");
 
   // Destination Settings Dialog State
@@ -428,7 +461,9 @@ export default function DocumentsPage() {
              </Select>
           </div>
           <div className="flex-1 p-3 space-y-1">
-            {tree.length === 0 ? (
+            {isLoading && tree.length === 0 ? (
+              <SidebarSkeleton />
+            ) : tree.length === 0 ? (
               <div className="text-center py-12 px-4 text-sm text-muted-foreground">
                 <div className="h-12 w-12 rounded-full bg-muted mx-auto mb-4 flex items-center justify-center">
                   <FileText className="h-6 w-6 opacity-40" />
@@ -464,8 +499,10 @@ export default function DocumentsPage() {
         </div>
 
         {/* Content viewer */}
-        <div className="flex-1 flex flex-col min-w-0 bg-muted/5">
-          {activeDoc ? (
+        <div className="flex-1 flex flex-col min-w-0 bg-muted/5 relative">
+          {isLoading && !activeDoc ? (
+            <ContentSkeleton />
+          ) : activeDoc ? (
             // Root-level docs (Title Containers) ALWAYS get the CategoryHubView
             isRootContainer ? (
               <CategoryHubView 
@@ -488,9 +525,9 @@ export default function DocumentsPage() {
                           {activeDoc.subtitle}
                         </span>
                       )}
-                      {activeDoc.formCode && (
+                      {activeDoc.activityCode && (
                         <span className="px-2 py-0.5 rounded bg-primary/10 text-[10px] font-black text-primary uppercase tracking-widest border border-primary/20">
-                          {activeDoc.formCode}
+                          {activeDoc.activityCode}
                         </span>
                       )}
                     </div>
@@ -527,6 +564,13 @@ export default function DocumentsPage() {
                         <Settings2 className="w-4 h-4" /> Destination Settings
                       </button>
                       <button 
+                        onClick={() => copyDocLink(activeDoc)}
+                        className="h-10 px-5 rounded-xl border border-border bg-card hover:bg-muted text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center gap-2 text-muted-foreground"
+                        title={activeDoc.activityCode ? `Copy link: ?${activeDoc.activityCode}` : 'Copy link (no activity code set)'}
+                      >
+                        <Link2 className="w-4 h-4" /> Copy Link
+                      </button>
+                      <button 
                         onClick={() => navigate(`/create-new?edit=${activeDoc.id}`)}
                         className="h-10 px-5 rounded-xl border border-border bg-card hover:bg-muted text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center gap-2"
                       >
@@ -534,24 +578,53 @@ export default function DocumentsPage() {
                       </button>
                     </div>
                 </div>
-                <div className="flex-1 overflow-auto py-8 animate-in fade-in duration-700">
-                  <div className="max-w-[850px] mx-auto bg-card rounded-2xl shadow-xl shadow-black/5 border border-border/50 min-h-[800px] overflow-hidden">
-                    <div
-                      className="px-16 py-12 text-sm leading-relaxed prose prose-slate max-w-none
-                        dark:prose-invert
-                        [&>h1]:text-3xl [&>h1]:font-extrabold [&>h1]:mt-10 [&>h1]:mb-6 [&>h1]:tracking-tight
-                        [&>h2]:text-2xl [&>h2]:font-bold [&>h2]:mt-8 [&>h2]:mb-4
-                        [&>h3]:text-xl [&>h3]:font-semibold [&>h3]:mt-6 [&>h3]:mb-3
-                        [&>p]:mb-5 [&>p]:text-foreground/80 [&>p]:text-[15px]
-                        [&>ul]:list-disc [&>ul]:pl-6 [&>ul]:mb-5 [&>ul]:text-foreground/80 [&>ul]:space-y-2
-                        [&>ol]:list-decimal [&>ol]:pl-6 [&>ol]:mb-5 [&>ol]:text-foreground/80 [&>ol]:space-y-2
-                        [&>pre]:bg-slate-900 [&>pre]:text-slate-100 [&>pre]:p-5 [&>pre]:rounded-xl [&>pre]:font-mono [&>pre]:text-[13px] [&>pre]:mb-6 [&>pre]:shadow-inner
-                        [&>blockquote]:border-l-4 [&>blockquote]:border-primary/50 [&>blockquote]:bg-primary/5 [&>blockquote]:p-5 [&>blockquote]:rounded-r-xl [&>blockquote]:italic [&>blockquote]:text-foreground/80 [&>blockquote]:mb-6
-                        [&>hr]:my-10 [&>hr]:border-border"
-                      dangerouslySetInnerHTML={{ __html: renderMarkdown(activeDoc.content) }}
-                    />
-                  </div>
-                </div>
+                 <div className="flex-1 overflow-auto py-8 animate-in fade-in duration-700">
+                   <div className="max-w-[850px] mx-auto bg-card rounded-2xl shadow-xl shadow-black/5 border border-border/50 min-h-[800px] overflow-hidden">
+                     {isContentLoading || activeDoc.content === undefined ? (
+                       <div className="p-16">
+                         <ContentSkeleton />
+                       </div>
+                     ) : (
+                       <div
+                         className="px-16 py-12 text-sm leading-relaxed prose prose-slate max-w-none
+                           dark:prose-invert
+                           [&>h1]:text-3xl [&>h1]:font-extrabold [&>h1]:mt-10 [&>h1]:mb-6 [&>h1]:tracking-tight
+                           [&>h2]:text-2xl [&>h2]:font-bold [&>h2]:mt-8 [&>h2]:mb-4
+                           [&>h3]:text-xl [&>h3]:font-semibold [&>h3]:mt-6 [&>h3]:mb-3
+                           [&>p]:mb-5 [&>p]:text-foreground/80 [&>p]:text-[15px]
+                           [&>ul]:list-disc [&>ul]:pl-6 [&>ul]:mb-5 [&>ul]:text-foreground/80 [&>ul]:space-y-2
+                           [&>ol]:list-decimal [&>ol]:pl-6 [&>ol]:mb-5 [&>ol]:text-foreground/80 [&>ol]:space-y-2
+                           [&>pre]:bg-slate-900 [&>pre]:text-slate-100 [&>pre]:p-5 [&>pre]:rounded-xl [&>pre]:font-mono [&>pre]:text-[13px] [&>pre]:mb-6 [&>pre]:shadow-inner
+                           [&>blockquote]:border-l-4 [&>blockquote]:border-primary/50 [&>blockquote]:bg-primary/5 [&>blockquote]:p-5 [&>blockquote]:rounded-r-xl [&>blockquote]:italic [&>blockquote]:text-foreground/80 [&>blockquote]:mb-6
+                           [&>hr]:my-10 [&>hr]:border-border"
+                         onClick={(e) => {
+                            const target = e.target as HTMLElement;
+                            const badge = target.closest(".sub-activity-badge");
+                            if (badge && activeDoc) {
+                              const code = badge.getAttribute("data-code");
+                              if (code) {
+                                const portal = allPortals.find(p => p.id === activeDoc.bankId || activeDoc.assignedBanks?.split(',').includes(p.id)) || allPortals[0];
+                                if (portal) {
+                                  const base = `${window.location.origin}/portal/${portal.id}/docs`;
+                                  const url = `${base}?${encodeURIComponent(code)}`;
+                                  navigator.clipboard.writeText(url).then(() => {
+                                    toast.success("Link copied!", {
+                                      description: url,
+                                    });
+                                  }).catch(() => {
+                                    toast.error("Could not copy — here is the link:", {
+                                      description: url,
+                                    });
+                                  });
+                                }
+                              }
+                            }
+                          }}
+                          dangerouslySetInnerHTML={{ __html: renderMarkdown(activeDoc.content) }}
+                       />
+                     )}
+                   </div>
+                 </div>
               </>
             )
           ) : (
@@ -695,25 +768,59 @@ export default function DocumentsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Global Administrative Loading Overlay */}
+      {isLoading && documents.length === 0 && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/10 backdrop-blur-[2px]">
+           <ElegantLoader label="Listing Documents" />
+        </div>
+      )}
     </AppLayout>
   );
 }
 
 // Simple markdown-to-HTML renderer for display
 function renderMarkdown(md: string): string {
-  if (md.startsWith("<")) return md; // already HTML from editor
-  return md
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
-    .replace(/^- (.+)$/gm, '<li>$1</li>')
-    .replace(/((<li>.*<\/li>\n?)+)/g, '<ul>$&</ul>')
-    .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
-    .replace(/^(?!<[hupol]|<li|<bl|<co|<st|<em|<ul|<hr)(.*\S.*)$/gm, '<p>$1</p>')
-    .replace(/\n{2,}/g, '\n');
+  let html = md;
+  if (!md.startsWith("<")) {
+    html = md
+      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+      .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+      .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+      .replace(/^- (.+)$/gm, '<li>$1</li>')
+      .replace(/((<li>.*<\/li>\n?)+)/g, '<ul>$&</ul>')
+      .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
+      .replace(/^(?!<[hupol]|<li|<bl|<co|<st|<em|<ul|<hr)(.*\S.*)$/gm, '<p>$1</p>')
+      .replace(/\n{2,}/g, '\n');
+  }
+
+  // Post-process to find parent elements that contain a sub-activity code like (CDB)
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(`<div>${html}</div>`, "text/html");
+    const container = doc.body.firstChild as HTMLElement;
+    
+    if (container) {
+      const elements = Array.from(container.querySelectorAll("h1, h2, h3, h4, h5, h6, p, li, td"));
+      elements.forEach((el) => {
+        const htmlContent = el.innerHTML;
+        const match = htmlContent.match(/\(([a-zA-Z0-9_-]{2,20})\)/);
+        if (match) {
+          const code = match[1];
+          const badgeHtml = `<span class="sub-activity-badge cursor-pointer inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 transition-all select-none ml-2" data-code="${code}" title="Click to copy deep link">(${code})</span>`;
+          el.innerHTML = htmlContent.replace(/\(([a-zA-Z0-9_-]{2,20})\)/g, badgeHtml);
+        }
+      });
+      return container.innerHTML;
+    }
+  } catch (err) {
+    console.error("Error decorating sub-activity codes in admin view:", err);
+  }
+
+  return html;
 }
 

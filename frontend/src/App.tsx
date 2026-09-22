@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -19,15 +19,29 @@ import { useEffect } from "react";
 import { ThemeProvider } from "next-themes";
 import { usePortalStore } from "./stores/portalStore";
 import { useDocumentStore } from "./stores/documentStore";
+import { ElegantLoader } from "@/components/SkeletonLoaders";
 
 const DataLoader = ({ children }: { children: React.ReactNode }) => {
   const fetchPortals = usePortalStore(s => s.fetchPortals);
+  const portalsLoading = usePortalStore(s => s.isLoading);
+  const portals = usePortalStore(s => s.portals);
+  
   const fetchDocuments = useDocumentStore(s => s.fetchDocuments);
+  const documentsLoading = useDocumentStore(s => s.isLoading);
+  const documents = useDocumentStore(s => s.documents);
+
+  const location = useLocation();
+  const isPortalRoute = location.pathname.startsWith("/portal/");
 
   useEffect(() => {
     fetchPortals();
-    fetchDocuments();
-  }, [fetchPortals, fetchDocuments]);
+    if (!isPortalRoute) {
+      // Only fetch as admin (including drafts) if we are on an admin dashboard route
+      fetchDocuments(undefined, true);
+    }
+  }, [fetchPortals, fetchDocuments, isPortalRoute]);
+
+
 
   return <>{children}</>;
 };

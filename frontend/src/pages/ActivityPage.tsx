@@ -15,7 +15,7 @@ export default function ActivityPage() {
   useEffect(() => {
     fetchActivities();
     fetchStats();
-    fetchDocuments();
+    fetchDocuments(undefined, true);
     fetchPortals();
   }, [fetchActivities, fetchStats, fetchDocuments, fetchPortals]);
 

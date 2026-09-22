@@ -1,5 +1,6 @@
 const { Pool, Client } = require('pg');
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 async function initDb() {
   const dbName = process.env.PGDATABASE || 'docsforge';
@@ -64,11 +65,12 @@ async function initDb() {
         "bankId" VARCHAR(100) NOT NULL,
         title VARCHAR(255) NOT NULL,
         subtitle VARCHAR(255) DEFAULT NULL,
-        "formCode" VARCHAR(100) DEFAULT NULL,
+        "activityCode" VARCHAR(100) DEFAULT NULL,
         "parentId" VARCHAR(100) DEFAULT NULL,
         content TEXT,
         author VARCHAR(100) DEFAULT NULL,
         "isVersion" BOOLEAN DEFAULT FALSE,
+        "versionLabel" VARCHAR(50) DEFAULT NULL,
         position INT DEFAULT 1,
         visibility VARCHAR(20) DEFAULT 'specific',
         "assignedBanks" TEXT DEFAULT NULL,
@@ -111,6 +113,18 @@ async function initDb() {
 
     await pool.query(`DROP TRIGGER IF EXISTS trg_templates_update ON templates;`);
     await pool.query(`CREATE TRIGGER trg_templates_update BEFORE UPDATE ON templates FOR EACH ROW EXECUTE FUNCTION update_timestamp();`);
+
+    console.log('Creating media table...');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS media (
+        id SERIAL PRIMARY KEY,
+        filename VARCHAR(255) NOT NULL,
+        url TEXT NOT NULL,
+        mimetype VARCHAR(100),
+        size BIGINT,
+        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
 
     console.log('PostgreSQL Database Initialized Successfully!');
   } catch (err) { console.error(err); process.exit(1); }

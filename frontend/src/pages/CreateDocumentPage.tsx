@@ -140,14 +140,16 @@ export default function CreateDocumentPage() {
   const [setupStep, setSetupStep] = useState<"setup" | "editor">("setup");
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isTemplateSelectorOpen, setIsTemplateSelectorOpen] = useState(false);
+  const [docStrategy, setDocStrategy] = useState<"standard" | "version">("standard");
   const [destinationType, setDestinationType] = useState<"existing" | "new_title">("existing");
+  const [versionLabel, setVersionLabel] = useState("");
   const [selectedParentId, setSelectedParentId] = useState<string>("");
   const [selectedBankId, setSelectedBankId] = useState<string>("");
   const [newContainerName, setNewContainerName] = useState(""); // Top level title
   const [newContainerPosition, setNewContainerPosition] = useState<number>(1);
   const [pageName, setPageName] = useState(""); // The actual sub-page title
   const [pagePosition, setPagePosition] = useState<number>(1);
-  const [formCode, setFormCode] = useState(""); // The new administrative form code
+  const [formCode, setFormCode] = useState(""); // The activity code
   const [visibility, setVisibility] = useState<"specific" | "all">("specific");
   const [assignedBanks, setAssignedBanks] = useState<string[]>([]);
   
@@ -183,19 +185,41 @@ export default function CreateDocumentPage() {
       const openSidebar = searchParams.get("sidebar") === "open";
       setSetupStep("editor"); // Start in editor mode for edits
       setIsSidebarOpen(openSidebar); // Open sidebar if requested, otherwise hide by default for edits
-      if (editorRef.current) {
-        const doc = getDocument(editId);
-        if (doc) {
-          setTitle(doc.title);
-          setPageName(doc.title);
-          setFormCode(doc.formCode || "");
-          setSelectedBankId(doc.bankId);
-          setSelectedParentId(doc.parentId || "");
-          editorRef.current.innerHTML = doc.content;
+      
+      const doc = getDocument(editId);
+      if (doc) {
+        setTitle(doc.title);
+        setPageName(doc.title);
+        if (doc.isVersion) {
+          setDocStrategy("version");
+          setVersionLabel(doc.versionLabel || "");
+        } else {
+          setDocStrategy("standard");
+        }
+        setFormCode(doc.activityCode || (doc as any).formCode || "");
+        setSelectedBankId(doc.bankId);
+        setSelectedParentId(doc.parentId || "");
+        if (doc.position !== undefined) setPagePosition(doc.position);
+
+        const populateEditor = (contentVal: string) => {
+          if (editorRef.current) {
+            editorRef.current.innerHTML = contentVal;
+            setTimeout(() => {
+              updateWordCount();
+            }, 50);
+          }
+        };
+
+        if (doc.content === undefined) {
+          useDocumentStore.getState().fetchDocumentContent(editId).then((freshDoc) => {
+            if (freshDoc) {
+              populateEditor(freshDoc.content || "");
+              loadedDocRef.current = editId; // Mark as loaded
+            }
+          });
+        } else {
+          populateEditor(doc.content || "");
           loadedDocRef.current = editId; // Mark as loaded
-          setTimeout(() => {
-            updateWordCount();
-          }, 50);
         }
       }
     } else {
@@ -365,7 +389,7 @@ export default function CreateDocumentPage() {
     formData.append('file', file);
     const loadingToast = toast.loading(`Ingesting ${file.name.split('.').pop()?.toUpperCase()} and structuring content...`);
     try {
-      const resp = await fetch('/api/media/document-parse', {
+      const resp = await fetch(`http://${window.location.hostname}:5000/api/media/document-parse`, {
         method: 'POST',
         body: formData,
       });
@@ -519,7 +543,7 @@ export default function CreateDocumentPage() {
     }
 
     if (!formCode.trim()) {
-      toast.error("Please provide a Form Code for administrative tracking.");
+      toast.error("Please provide an Activity Code for administrative tracking.");
       return;
     }
     
@@ -575,11 +599,14 @@ export default function CreateDocumentPage() {
         subtitle: "",
         bankId: selectedBankId,
         parentId: existingDoc?.parentId || null, // Keep the same parent/container
-        formCode,
+        activityCode: formCode,
+        position: pagePosition,
         content,
         visibility,
         assignedBanks: assignedBanks.length > 0 ? assignedBanks.join(",") : null,
         isPublished: existingDoc?.isPublished ?? false, 
+        isVersion: docStrategy === "version",
+        versionLabel: docStrategy === "version" ? versionLabel.trim() : null,
       });
       toast.success("Document updated successfully!");
       navigate("/documents");
@@ -611,17 +638,39 @@ export default function CreateDocumentPage() {
       position: pagePosition,
       bankId: selectedBankId,
       parentId: finalParentId,
-      formCode,
+      activityCode: formCode,
       visibility,
       assignedBanks: assignedBanks.length > 0 ? assignedBanks.join(",") : null,
       content,
       author: "System Admin",
       isPublished: false, // Always save as draft by default
+      isVersion: docStrategy === "version",
+      versionLabel: docStrategy === "version" ? versionLabel.trim() : null,
     });
 
     toast.success("Document saved as draft!");
     navigate("/documents");
   };
+
+  // Derivative Position Calculations
+  const calcAvailablePositions = (parentId: string | null) => {
+    const occupied = documents
+      .filter(d => d.parentId === parentId && d.bankId === selectedBankId && d.id !== editId)
+      .map(d => d.position)
+      .filter(p => p !== undefined) as number[];
+    
+    // As per user requirement: no limit logically, generate enough padding ahead of occupied max.
+    const maxPossibility = Math.max(0, ...occupied) + 20;
+    
+    const available = Array.from({length: maxPossibility}, (_, i) => i + 1)
+      .filter(p => !occupied.includes(p));
+
+    // Ensure the current selection (or the document's original position) is always an option if valid
+    return available;
+  };
+
+  const availableContainerPositions = calcAvailablePositions(null);
+  const availablePagePositions = calcAvailablePositions(destinationType === "new_title" ? null : selectedParentId);
 
   return (
     <AppLayout>
@@ -827,7 +876,10 @@ export default function CreateDocumentPage() {
                       [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:mb-5
                       [&_pre]:bg-slate-900 [&_pre]:text-slate-100 [&_pre]:p-5 [&_pre]:rounded-xl [&_pre]:font-mono [&_pre]:text-xs [&_pre]:mb-6
                       [&_blockquote]:border-l-4 [&_blockquote]:border-primary/40 [&_blockquote]:pl-6 [&_blockquote]:py-1 [&_blockquote]:italic [&_blockquote]:text-muted-foreground [&_blockquote]:mb-6 [&_blockquote]:bg-primary/5 [&_blockquote]:rounded-r-lg
-                      [&_hr]:my-10 [&_hr]:border-border select-text"
+                      [&_hr]:my-10 [&_hr]:border-border select-text
+                      [&_table]:w-full [&_table]:my-6 [&_table]:border-collapse [&_table]:border [&_table]:border-border [&_table]:rounded-lg [&_table]:overflow-hidden
+                      [&_th]:border [&_th]:border-border [&_th]:bg-muted/50 [&_th]:p-3 [&_th]:text-left [&_th]:font-bold
+                      [&_td]:border [&_td]:border-border [&_td]:p-3 [&_td]:align-top"
                     data-placeholder="Start typing your document..."
                     tabIndex={0}
                   />
@@ -1001,110 +1053,174 @@ export default function CreateDocumentPage() {
                       </PopoverContent>
                     </Popover>
                  </div>
+                  {/* Step 2: Document Strategy */}
+                  <div className="space-y-4 animate-in slide-in-from-right-4 duration-500 delay-200">
+                     <div className="flex items-center justify-between">
+                        <Label className="uppercase tracking-widest text-[9px] font-black text-primary px-1">2. Document Strategy</Label>
+                        <div className="h-4 w-4 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary">02</div>
+                     </div>
+                     <div className="flex bg-muted/40 p-1 rounded-xl border border-border/60">
+                        <button 
+                          onClick={() => setDocStrategy("standard")}
+                          className={cn("flex-1 h-10 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all", docStrategy === "standard" ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20" : "text-muted-foreground hover:bg-card/50")}
+                        >
+                           Standard
+                        </button>
+                        <button 
+                           onClick={() => setDocStrategy("version")}
+                           className={cn("flex-1 h-10 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all", docStrategy === "version" ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20" : "text-muted-foreground hover:bg-card/50")}
+                        >
+                           Version
+                        </button>
+                     </div>
+                  </div>
 
-                 {/* Step 2: Container Slot */}
-                 <div className="space-y-4 animate-in slide-in-from-right-4 duration-500 delay-200">
-                    <div className="flex items-center justify-between">
-                       <Label className="uppercase tracking-widest text-[9px] font-black text-primary px-1">2. Title Container Slot</Label>
-                       <div className="h-4 w-4 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary">02</div>
-                    </div>
-                    
-                    <div className="flex flex-col gap-3">
-                       <div className="flex bg-muted/40 p-1 rounded-xl border border-border/60">
-                          <button 
-                            onClick={() => setDestinationType("existing")}
-                            className={cn("flex-1 h-10 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all", destinationType === "existing" ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20" : "text-muted-foreground hover:bg-card/50")}
-                          >
-                             Existing Slot
-                          </button>
-                          <button 
-                             onClick={() => setDestinationType("new_title")}
-                             className={cn("flex-1 h-10 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all", destinationType === "new_title" ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20" : "text-muted-foreground hover:bg-card/50")}
-                          >
-                             Deploy New Slot
-                          </button>
-                       </div>
+                  {/* Step 3: Structural Placement (Conditional) */}
+                  <div className="space-y-4 animate-in slide-in-from-right-4 duration-500 delay-300">
+                     {docStrategy === "standard" ? (
+                       <>
+                         <div className="flex items-center justify-between">
+                            <Label className="uppercase tracking-widest text-[9px] font-black text-primary px-1">3. Title Container Slot</Label>
+                            <div className="h-4 w-4 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary">03</div>
+                         </div>
+                         <div className="flex flex-col gap-3">
+                            <div className="flex bg-muted/40 p-1 rounded-xl border border-border/60">
+                               <button 
+                                 onClick={() => setDestinationType("existing")}
+                                 className={cn("flex-1 h-10 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all", destinationType === "existing" ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20" : "text-muted-foreground hover:bg-card/50")}
+                               >
+                                  Slot
+                               </button>
+                               <button 
+                                  onClick={() => setDestinationType("new_title")}
+                                  className={cn("flex-1 h-10 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all", destinationType === "new_title" ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20" : "text-muted-foreground hover:bg-card/50")}
+                               >
+                                  Deploy
+                               </button>
+                            </div>
+                            {destinationType === "existing" && (
+                               <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                                  <Select value={selectedParentId} onValueChange={setSelectedParentId}>
+                                    <SelectTrigger className="h-14 bg-card border-border/60 rounded-xl font-bold text-xs px-4">
+                                      <SelectValue placeholder="Locate container slot..." />
+                                    </SelectTrigger>
+                                    <SelectContent className="rounded-xl shadow-2xl border-border">
+                                      {documents
+                                        .filter(d => !d.parentId && (visibility === "all" || d.bankId === selectedBankId))
+                                        .map((doc) => (
+                                          <SelectItem key={doc.id} value={doc.id} className="font-bold text-xs">{doc.title}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                  </Select>
+                               </div>
+                            )}
+                            {destinationType === "new_title" && (
+                               <div className="animate-in fade-in slide-in-from-top-2 duration-300 grid grid-cols-[1fr_80px] gap-2">
+                                  <Input 
+                                    value={newContainerName}
+                                    onChange={(e) => { setNewContainerName(e.target.value); if (!pageName) setTitle(e.target.value); }}
+                                    placeholder="Structural Title Name"
+                                    className="h-14 rounded-xl border-border/60 bg-card font-bold text-xs"
+                                  />
+                                  <div className="relative">
+                                    <span className="absolute left-3 top-1 text-[8px] font-black text-primary/60 uppercase z-10 pointer-events-none">Position</span>
+                                    <Select value={newContainerPosition.toString()} onValueChange={(v) => setNewContainerPosition(parseInt(v))}>
+                                      <SelectTrigger className="h-14 rounded-xl border-border/60 bg-card pt-4 font-black">
+                                        <SelectValue placeholder="Position" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {!availableContainerPositions.includes(newContainerPosition) && newContainerPosition && (
+                                          <SelectItem value={newContainerPosition.toString()}>{newContainerPosition}</SelectItem>
+                                        )}
+                                        {availableContainerPositions.map(p => (
+                                          <SelectItem key={p} value={p.toString()}>{p}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                               </div>
+                            )}
+                         </div>
+                       </>
+                     ) : (
+                       <>
+                         <div className="flex items-center justify-between">
+                            <Label className="uppercase tracking-widest text-[9px] font-black text-primary px-1">3. Version Configuration</Label>
+                            <div className="h-4 w-4 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary">03</div>
+                         </div>
+                         <div className="flex flex-col gap-3">
+                           <Select value={selectedParentId} onValueChange={setSelectedParentId}>
+                             <SelectTrigger className="h-14 bg-card border-border/60 rounded-xl font-bold text-xs px-4 text-left">
+                               <SelectValue placeholder="Target document..." />
+                             </SelectTrigger>
+                             <SelectContent className="rounded-xl shadow-2xl border-border">
+                               {documents
+                                 .filter(d => !d.isVersion && (visibility === "all" || d.bankId === selectedBankId))
+                                 .map((doc) => (
+                                   <SelectItem key={doc.id} value={doc.id} className="font-bold text-xs">{doc.title}</SelectItem>
+                                 ))}
+                             </SelectContent>
+                           </Select>
+                           <div className="relative">
+                              <span className="absolute left-4 top-1.5 text-[8px] font-black text-primary/60 uppercase tracking-widest">Version Label</span>
+                              <Input 
+                                value={versionLabel}
+                                onChange={(e) => setVersionLabel(e.target.value)}
+                                placeholder="e.g. v2.1 or Rev. B"
+                                className="h-14 rounded-xl border-border/60 bg-card pt-4 px-4 font-black text-xs"
+                              />
+                           </div>
+                         </div>
+                       </>
+                     )}
+                  </div>
 
-                       {destinationType === "existing" && (
-                          <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-                             <Select value={selectedParentId} onValueChange={setSelectedParentId}>
-                               <SelectTrigger className="h-14 bg-card border-border/60 rounded-xl font-bold text-xs px-4">
-                                 <SelectValue placeholder="Locate container slot..." />
-                               </SelectTrigger>
-                               <SelectContent className="rounded-xl shadow-2xl border-border">
-                                 {documents
-                                   .filter(d => !d.parentId && (visibility === "all" || d.bankId === selectedBankId))
-                                   .map((doc) => (
-                                     <SelectItem key={doc.id} value={doc.id} className="font-bold text-xs">{doc.title}</SelectItem>
-                                   ))}
-                               </SelectContent>
-                             </Select>
-                          </div>
-                       )}
-
-                       {destinationType === "new_title" && (
-                          <div className="animate-in fade-in slide-in-from-top-2 duration-300 grid grid-cols-[1fr_80px] gap-2">
-                             <Input 
-                               value={newContainerName}
-                               onChange={(e) => { setNewContainerName(e.target.value); if (!pageName) setTitle(e.target.value); }}
-                               placeholder="Structural Title Name"
-                               className="h-14 rounded-xl border-border/60 bg-card font-bold text-xs"
-                             />
-                             <div className="relative">
-                               <span className="absolute left-3 top-1 text-[8px] font-black text-primary/60 uppercase">Pos</span>
-                               <Input 
-                                 type="number"
-                                 value={newContainerPosition}
-                                 onChange={(e) => setNewContainerPosition(parseInt(e.target.value) || 1)}
-                                 className="h-14 rounded-xl border-border/60 bg-card pt-3 font-black text-center"
-                               />
-                             </div>
-                          </div>
-                       )}
-                    </div>
-                 </div>
-
-                 {/* Step 3: Page Definition */}
-                 <div className="space-y-4 animate-in slide-in-from-right-4 duration-500 delay-300">
-                    <div className="flex items-center justify-between">
-                       <Label className="uppercase tracking-widest text-[9px] font-black text-primary px-1">3. Document Signature</Label>
-                       <div className="h-4 w-4 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary">03</div>
-                    </div>
-                    
-                    <div className="flex flex-col gap-3">
-                       <div className="grid grid-cols-[1fr_80px] gap-2">
-                          <div className="relative">
-                             <span className="absolute left-4 top-1.5 text-[8px] font-black text-primary/60 uppercase tracking-widest">Document Name</span>
-                             <Input 
-                               value={pageName}
-                               onChange={(e) => { setPageName(e.target.value); setTitle(e.target.value); }}
-                               placeholder="e.g. Master API Contract"
-                               className="h-14 rounded-xl border-border/60 bg-card pt-4 px-4 font-black text-xs"
-                             />
-                          </div>
-                          <div className="relative">
-                               <span className="absolute left-3 top-1.5 text-[8px] font-black text-primary/60 uppercase">Pos</span>
-                               <Input 
-                                 type="number"
-                                 value={pagePosition}
-                                 onChange={(e) => setPagePosition(parseInt(e.target.value) || 1)}
-                                 className="h-14 rounded-xl border-border/60 bg-card pt-4 font-black text-center"
-                               />
-                          </div>
-                       </div>
-                       
-                       <div className="relative">
-                          <span className="absolute left-4 top-1.5 text-[8px] font-black text-indigo-500/60 uppercase tracking-widest">Administrative Form Code</span>
-                          <Input 
-                            value={formCode}
-                            onChange={(e) => setFormCode(e.target.value.toUpperCase())}
-                            placeholder="e.g. F-USG-REV-001"
-                            className="h-14 rounded-xl border-indigo-500/20 bg-card pt-4 px-4 font-black text-xs"
-                          />
-                          <Settings className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-500 opacity-20" />
-                       </div>
-                    </div>
-                 </div>
+                  {/* Step 4: Page Definition */}
+                  <div className="space-y-4 animate-in slide-in-from-right-4 duration-500 delay-[400ms]">
+                     <div className="flex items-center justify-between">
+                        <Label className="uppercase tracking-widest text-[9px] font-black text-primary px-1">4. Document Signature</Label>
+                        <div className="h-4 w-4 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary">04</div>
+                     </div>
+                     <div className="flex flex-col gap-3">
+                        <div className="grid grid-cols-[1fr_80px] gap-2">
+                           <div className="relative">
+                              <span className="absolute left-4 top-1.5 text-[8px] font-black text-primary/60 uppercase tracking-widest">Document Name</span>
+                              <Input 
+                                value={pageName}
+                                onChange={(e) => { setPageName(e.target.value); setTitle(e.target.value); }}
+                                placeholder="e.g. Master API Contract"
+                                className="h-14 rounded-xl border-border/60 bg-card pt-4 px-4 font-black text-xs"
+                              />
+                           </div>
+                           <div className="relative">
+                                <span className="absolute left-3 top-1.5 text-[8px] font-black text-primary/60 uppercase z-10 pointer-events-none">Position</span>
+                                <Select value={pagePosition.toString()} onValueChange={(v) => setPagePosition(parseInt(v))}>
+                                  <SelectTrigger className="h-14 rounded-xl border-border/60 bg-card pt-4 font-black">
+                                    <SelectValue placeholder="Position" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {!availablePagePositions.includes(pagePosition) && pagePosition && (
+                                      <SelectItem value={pagePosition.toString()}>{pagePosition}</SelectItem>
+                                    )}
+                                    {availablePagePositions.map(p => (
+                                      <SelectItem key={p} value={p.toString()}>{p}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                           </div>
+                        </div>
+                        <div className="relative">
+                           <span className="absolute left-4 top-1.5 text-[8px] font-black text-indigo-500/60 uppercase tracking-widest">Activity Code</span>
+                           <Input 
+                             value={formCode}
+                             onChange={(e) => setFormCode(e.target.value.toUpperCase())}
+                             placeholder="e.g. F-USG-REV-001"
+                             className="h-14 rounded-xl border-indigo-500/20 bg-card pt-4 px-4 font-black text-xs"
+                           />
+                           <Settings className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-500 opacity-20" />
+                        </div>
+                     </div>
+                  </div>
               </div>
               
               <div className="mt-auto pt-10 border-t border-border/50">

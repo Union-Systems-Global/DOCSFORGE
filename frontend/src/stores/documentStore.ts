@@ -6,9 +6,9 @@ export interface SavedDocument {
   bankId: string; // The explicit client this document belongs to
   title: string;
   subtitle: string;
-  formCode?: string | null;
+  activityCode?: string | null;
   parentId: string | null;
-  content: string;
+  content?: string;
   author: string;
   createdAt: string;
   updatedAt: string;
@@ -17,6 +17,7 @@ export interface SavedDocument {
   assignedBanks?: string | null;
   isPublished?: boolean;
   isVersion?: boolean;
+  versionLabel?: string | null;
 }
 
 export interface DocumentNode {
@@ -24,38 +25,87 @@ export interface DocumentNode {
   bankId: string;
   title: string;
   subtitle: string;
-  formCode?: string | null;
+  activityCode?: string | null;
   position?: number;
   visibility?: 'all' | 'specific';
   assignedBanks?: string | null;
   isPublished?: boolean;
   isVersion?: boolean;
+  versionLabel?: string | null;
   children: DocumentNode[];
 }
-
 interface DocumentStore {
   documents: SavedDocument[];
-  fetchDocuments: (bankId?: string) => Promise<void>;
+  isLoading: boolean;
+  lastFetchedBankId: string | null;
+  lastFetchedWasAdmin: boolean | null;
+  fetchDocuments: (bankId?: string, isAdmin?: boolean) => Promise<void>;
   addDocument: (doc: Omit<SavedDocument, 'id' | 'createdAt' | 'updatedAt'>) => Promise<string>;
   renameDocument: (id: string, newTitle: string) => Promise<void>;
   deleteDocument: (id: string) => Promise<void>;
   getDocumentTree: (filterBankId?: string) => DocumentNode[]; // Optional filter for the client portals
   publishDocument: (id: string, published: boolean) => Promise<void>;
-  updateFormCode: (id: string, formCode: string) => Promise<void>;
+  updateActivityCode: (id: string, activityCode: string) => Promise<void>;
   updateDocument: (id: string, updates: Partial<SavedDocument>) => Promise<void>;
   getDocument: (id: string) => SavedDocument | undefined;
+  fetchDocumentContent: (id: string) => Promise<SavedDocument | undefined>;
 }
 
 export const useDocumentStore = create<DocumentStore>((set, get) => ({
   documents: [],
+  isLoading: false,
+  lastFetchedBankId: null,
+  lastFetchedWasAdmin: null,
 
-  fetchDocuments: async (bankId) => {
+  fetchDocuments: async (bankId, isAdmin) => {
+    // Basic caching logic:
+    // 1. If fetching as admin and we already fetched as admin and have documents, skip
+    if (isAdmin && get().lastFetchedWasAdmin && get().documents.length > 0) {
+      return;
+    }
+    // 2. If fetching for a bank and we already fetched for this bank and have documents, skip
+    if (bankId && bankId === get().lastFetchedBankId && !get().lastFetchedWasAdmin && get().documents.length > 0) {
+      return;
+    }
+
+    set({ isLoading: true });
     try {
-      const endpoint = bankId ? `/documents?bankId=${bankId}` : '/documents';
+      let endpoint = '/documents';
+      const params = new URLSearchParams();
+      
+      if (bankId) params.append('bankId', bankId);
+      if (isAdmin) params.append('admin', 'true');
+      
+      const queryString = params.toString();
+      if (queryString) endpoint += `?${queryString}`;
+      
       const data = await api.get(endpoint);
-      set({ documents: data });
+      set({ 
+        documents: data, 
+        lastFetchedBankId: bankId || null,
+        lastFetchedWasAdmin: !!isAdmin
+      });
     } catch (e) {
       console.error(e);
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  fetchDocumentContent: async (id: string) => {
+    const doc = get().documents.find(d => d.id === id);
+    if (doc && doc.content !== undefined) {
+      return doc;
+    }
+    try {
+      const data = await api.get(`/documents/${id}`);
+      set((state) => ({
+        documents: state.documents.map(d => d.id === id ? { ...d, content: data.content } : d)
+      }));
+      return get().documents.find(d => d.id === id);
+    } catch (e) {
+      console.error(e);
+      throw e;
     }
   },
 
@@ -133,12 +183,12 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     }
   },
 
-  updateFormCode: async (id, formCode) => {
+  updateActivityCode: async (id, activityCode) => {
     try {
-      await api.put(`/documents/${id}`, { formCode });
+      await api.put(`/documents/${id}`, { activityCode });
       set((state) => ({
         documents: state.documents.map((doc) =>
-          doc.id === id ? { ...doc, formCode, updatedAt: new Date().toISOString() } : doc
+          doc.id === id ? { ...doc, activityCode, updatedAt: new Date().toISOString() } : doc
         ),
       }));
     } catch (e) {
@@ -165,9 +215,10 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     let docs = get().documents;
     if (filterBankId) {
       docs = docs.filter(d => 
-        d.bankId === filterBankId || 
-        d.visibility === 'all' || 
-        d.assignedBanks?.split(',').includes(filterBankId)
+        (d.bankId === filterBankId || 
+         d.visibility === 'all' || 
+         d.assignedBanks?.split(',').includes(filterBankId)) &&
+        d.isPublished === true
       );
     }
 
@@ -195,12 +246,13 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
           bankId: d.bankId,
           title: d.title,
           subtitle: d.subtitle,
-          formCode: d.formCode,
+          activityCode: d.activityCode,
           position: d.position,
           visibility: d.visibility,
           assignedBanks: d.assignedBanks,
           isPublished: d.isPublished,
           isVersion: d.isVersion,
+          versionLabel: d.versionLabel,
           children: buildTree(d.id),
         }));
     };
@@ -210,12 +262,13 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
       bankId: d.bankId,
       title: d.title,
       subtitle: d.subtitle,
-      formCode: d.formCode,
+      activityCode: d.activityCode,
       position: d.position,
       visibility: d.visibility,
       assignedBanks: d.assignedBanks,
       isPublished: d.isPublished,
       isVersion: d.isVersion,
+      versionLabel: d.versionLabel,
       children: buildTree(d.id),
     }));
   },

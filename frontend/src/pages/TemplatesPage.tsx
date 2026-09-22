@@ -32,7 +32,7 @@ export default function TemplatesPage() {
 
   useEffect(() => {
     fetchTemplates();
-    fetchDocuments();
+    fetchDocuments(undefined, true);
   }, [fetchTemplates, fetchDocuments]);
 
   const categories = useMemo(() => {
